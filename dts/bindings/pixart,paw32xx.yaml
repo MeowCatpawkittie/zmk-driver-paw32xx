@@ -14,19 +14,19 @@ properties:
     description:
       GPIO connected to the motion pin, active low.
 
-  zephyr,axis-x:
-    type: int
-    required: true
-    description: |
-      The input code for the X axis to report for the device, typically any of
-      INPUT_REL_*. No report produced for the device X axis if unspecified.
+#  zephyr,axis-x:
+#    type: int
+#   required: true
+#    description: |
+#      The input code for the X axis to report for the device, typically any of
+#      INPUT_REL_*. No report produced for the device X axis if unspecified.
 
-  zephyr,axis-y:
-    type: int
-    required: true
-    description: |
-      The input code for the Y axis to report for the device, typically any of
-      INPUT_REL_*. No report produced for the device Y axis if unspecified.
+# zephyr,axis-y:
+#    type: int
+#    required: true
+#    description: |
+#      The input code for the Y axis to report for the device, typically any of
+#      INPUT_REL_*. No report produced for the device Y axis if unspecified.
 
   res-cpi:
     type: int
@@ -34,15 +34,15 @@ properties:
       CPI resolution for the sensor. This can also be changed in runtime using
       the paw32xx_set_resolution() API.
 
-  invert-x:
-    type: boolean
-    description: |
-      Invert X axis values.
+#  invert-x:
+#    type: boolean
+#    description: |
+#      Invert X axis values.
 
-  invert-y:
-    type: boolean
-    description: |
-      Invert Y axis values.
+  #invert-y:
+  #  type: boolean
+  #  description: |
+  #    Invert Y axis values.
 
   force-awake:
     type: boolean

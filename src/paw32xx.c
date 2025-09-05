@@ -62,12 +62,12 @@ LOG_MODULE_REGISTER(paw32xx, CONFIG_INPUT_LOG_LEVEL);
 
 struct paw32xx_config {
 	struct spi_dt_spec spi;
-	struct gpio_dt_spec motion_gpio;
-	uint16_t axis_x;
-	uint16_t axis_y;
+	struct gpio_dt_spec irq_gpio;
+	//uint16_t axis_x;
+	//uint16_t axis_y;
 	int16_t res_cpi;
-	bool invert_x;
-	bool invert_y;
+	//bool invert_x;
+	//bool invert_y;
 	bool force_awake;
 };
 
@@ -197,15 +197,20 @@ static void paw32xx_motion_work_handler(struct k_work *work)
 	struct paw32xx_data *data = CONTAINER_OF(
 			work, struct paw32xx_data, motion_work);
 	const struct device *dev = data->dev;
-	const struct paw32xx_config *cfg = dev->config;
-	uint8_t val;
-	int16_t x, y;
-	int ret;
+	const struct paw32xx_config *cfg = dev->config;	int ret;
 
 	ret = paw32xx_read_reg(dev, PAW32XX_MOTION, &val);
 	if (ret < 0) {
 		return;
 	}
+
+    if ((val & MOTION_STATUS_MOTION) == 0x00) {
+        gpio_pin_interrupt_configure_dt(&cfg->irq_gpio, GPIO_INT_EDGE_TO_ACTIVE);
+
+        if (gpio_pin_get_dt(&cfg->irq_gpio) == 0) {
+            return;
+        }
+    }
 
 	if ((val & MOTION_STATUS_MOTION) == 0x00) {
 		return;
@@ -218,11 +223,8 @@ static void paw32xx_motion_work_handler(struct k_work *work)
 
 	LOG_DBG("x=%4d y=%4d", x, y);
 
-	input_report_rel(data->dev, cfg->axis_x, x, false, K_FOREVER);
-	input_report_rel(data->dev, cfg->axis_y, y, true, K_FOREVER);
-
 	/* Trigger one more scan if more data is available. */
-	if (gpio_pin_get_dt(&cfg->motion_gpio)) {
+	if (gpio_pin_get_dt(&cfg->irq_gpio)) {
 		k_work_submit(&data->motion_work);
 	}
 }
@@ -320,31 +322,6 @@ static int paw32xx_configure(const struct device *dev)
 
 	k_sleep(K_MSEC(RESET_DELAY_MS));
 
-	if (cfg->invert_x || cfg->invert_y) {
-		ret = paw32xx_write_reg(dev, PAW32XX_WRITE_PROTECT, WRITE_PROTECT_DISABLE);
-		if (ret < 0) {
-			return ret;
-		}
-
-		ret = paw32xx_read_reg(dev, PAW32XX_MOUSE_OPTION, &val);
-		if (ret < 0) {
-			return ret;
-		}
-
-		WRITE_BIT(val, MOUSE_OPTION_MOVX_INV_BIT, cfg->invert_x);
-		WRITE_BIT(val, MOUSE_OPTION_MOVY_INV_BIT, cfg->invert_y);
-
-		ret = paw32xx_write_reg(dev, PAW32XX_MOUSE_OPTION, val);
-		if (ret < 0) {
-			return ret;
-		}
-
-		ret = paw32xx_write_reg(dev, PAW32XX_WRITE_PROTECT, WRITE_PROTECT_ENABLE);
-		if (ret < 0) {
-			return ret;
-		}
-	}
-
 	if (cfg->res_cpi > 0) {
 		paw32xx_set_resolution(dev, cfg->res_cpi);
 	}
@@ -369,21 +346,21 @@ static int paw32xx_init(const struct device *dev)
 
 	k_work_init(&data->motion_work, paw32xx_motion_work_handler);
 
-	if (!gpio_is_ready_dt(&cfg->motion_gpio)) {
-		LOG_ERR("%s is not ready", cfg->motion_gpio.port->name);
+	if (!gpio_is_ready_dt(&cfg->irq_gpio)) {
+		LOG_ERR("%s is not ready", cfg->irq_gpio.port->name);
 		return -ENODEV;
 	}
 
-	ret = gpio_pin_configure_dt(&cfg->motion_gpio, GPIO_INPUT);
+	ret = gpio_pin_configure_dt(&cfg->irq_gpio, GPIO_INPUT);
 	if (ret != 0) {
 		LOG_ERR("Motion pin configuration failed: %d", ret);
 		return ret;
 	}
 
 	gpio_init_callback(&data->motion_cb, paw32xx_motion_handler,
-			   BIT(cfg->motion_gpio.pin));
+			   BIT(cfg->irq_gpio.pin));
 
-	ret = gpio_add_callback_dt(&cfg->motion_gpio, &data->motion_cb);
+	ret = gpio_add_callback_dt(&cfg->irq_gpio, &data->motion_cb);
 	if (ret < 0) {
 		LOG_ERR("Could not set motion callback: %d", ret);
 		return ret;
@@ -395,7 +372,7 @@ static int paw32xx_init(const struct device *dev)
 		return ret;
 	}
 
-	ret = gpio_pin_interrupt_configure_dt(&cfg->motion_gpio,
+	ret = gpio_pin_interrupt_configure_dt(&cfg->irq_gpio,
 					      GPIO_INT_EDGE_TO_ACTIVE);
 	if (ret != 0) {
 		LOG_ERR("Motion interrupt configuration failed: %d", ret);
@@ -448,12 +425,8 @@ static int paw32xx_pm_action(const struct device *dev,
 										\
 	static const struct paw32xx_config paw32xx_cfg_##n = {			\
 		.spi = SPI_DT_SPEC_INST_GET(n, PAW32XX_SPI_MODE, 0),		\
-		.motion_gpio = GPIO_DT_SPEC_INST_GET(n, motion_gpios),		\
-		.axis_x = DT_INST_PROP(n, zephyr_axis_x),			\
-		.axis_y = DT_INST_PROP(n, zephyr_axis_y),			\
+		.irq_gpio = GPIO_DT_SPEC_INST_GET(n, irq_gpios),		\
 		.res_cpi = DT_INST_PROP_OR(n, res_cpi, -1),			\
-		.invert_x = DT_INST_PROP(n, invert_x),				\
-		.invert_y = DT_INST_PROP(n, invert_y),				\
 		.force_awake = DT_INST_PROP(n, force_awake),			\
 	};									\
 										\
@@ -467,3 +440,8 @@ static int paw32xx_pm_action(const struct device *dev,
 			      NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(PAW32XX_INIT)
+
+//		.axis_x = DT_INST_PROP(n, zephyr_axis_x),			\/
+//		.axis_y = DT_INST_PROP(n, zephyr_axis_y),			\/
+//		.invert_x = DT_INST_PROP(n, invert_x),				\/
+//		.invert_y = DT_INST_PROP(n, invert_y),				\/
