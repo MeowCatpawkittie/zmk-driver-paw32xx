@@ -8,7 +8,7 @@ compatible: "pixart,paw32xx"
 include: spi-device.yaml
 
 properties:
-  motion-gpios:
+  irq-gpios:
     type: phandle-array
     required: true
     description:
